@@ -1,18 +1,4 @@
-/* producer.c
- * Producer process: adds flights into shared queue (from schedule file or interactively)
- *
- * Usage:
- *   ./producer [schedule.txt]
- *
- * If schedule file is given, it will be read line-by-line. Format:
- *   NAME TYPE DURATION_MS EMERGENCY
- *   e.g. PK-301 LANDING 2000 0
- *        EK-777 TAKEOFF 1500 1
- *
- * Or run without argument and add flights interactively.
- *
- * Also supports marking a queued flight as emergency by id.
- */
+
 
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -60,10 +46,10 @@ void open_ipc() {
 }
 
 void add_flight(const char *name, int type, int duration_ms, int emergency) {
-    /* wait for space */
+    
     sem_wait(sem_spaces);
     sem_wait(sem_mutex);
-    /* place at tail */
+    
     int idx = st->q_tail;
     st->q[idx].used = 1;
     st->q[idx].id = st->next_id++;
@@ -116,7 +102,7 @@ void mark_emergency(int id) {
     }
     if (!found) printf("[producer] id=%d not found in queue\n", id);
     sem_post(sem_mutex);
-    /* signal consumer in case severe weather rules apply */
+  
     sem_post(sem_items);
 }
 
@@ -129,7 +115,6 @@ int parse_type(const char *s) {
 int main(int argc, char **argv) {
     open_ipc();
 
-    /* initialize shm if first time */
     sem_wait(sem_mutex);
     if (st->next_id == 0) {
         st->q_head = st->q_tail = st->q_count = 0;
@@ -142,12 +127,11 @@ int main(int argc, char **argv) {
     }
     sem_post(sem_mutex);
 
-    /* If schedule file given, read and enqueue */
     if (argc >= 2) {
         FILE *f = fopen(argv[1],"r");
         if (!f) {
             perror("open schedule");
-            // continue to interactive
+            
         } else {
             char name[128], type_s[32];
             int dur, em;
@@ -155,13 +139,12 @@ int main(int argc, char **argv) {
                 int t = parse_type(type_s);
                 if (t<0) continue;
                 add_flight(name, t, dur, em);
-                usleep(100000); /* small pause so consumer can start processing for demo */
+                usleep(100000); 
             }
             fclose(f);
         }
     }
 
-    /* interactive loop */
     while (1) {
         printf("\nProducer Menu:\n");
         printf("1) Add flight\n2) Mark queued flight EMERGENCY (by id)\n3) Toggle severe weather (current %s)\n4) Show status\n5) Exit\nChoose: ",
@@ -199,7 +182,7 @@ int main(int argc, char **argv) {
             st->severe_weather = !st->severe_weather;
             printf("Severe weather set to %d\n", st->severe_weather);
             sem_post(sem_mutex);
-            /* Signal consumer to re-check queue; posting items gives consumer chance to wake */
+           
             sem_post(sem_items);
         } else if (opt == 4) {
             print_status();
@@ -211,9 +194,6 @@ int main(int argc, char **argv) {
         }
     }
 
-    /* cleanup: don't unlink semaphores (consumer may still run). detach shm. */
-    shmdt(st);
-    // sem_close(sem_mutex); sem_close(sem_items); sem_close(sem_spaces); sem_close(sem_runways);
     return 0;
 }
 
