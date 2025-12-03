@@ -1,22 +1,4 @@
-/* monitor.c
- *
- * Terminal Monitor for Airport Runway Scheduler
- * - Attaches to SysV shared memory (SHM_KEY)
- * - Uses POSIX named semaphore "SEM_MUTEX_NAME" to take consistent snapshots
- * - Renders a colored ASCII dashboard with simple animations
- *
- * Build:
- *   gcc -o monitor monitor.c -pthread -lrt
- *
- * Run:
- *   ./monitor
- *
- * Controls:
- *   q : quit
- *
- * Note: monitor does not modify shared memory. It will try to open the semaphores
- *       used by producer/consumer to take consistent snapshots.
- */
+
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,7 +19,7 @@
 #define SEM_MUTEX_NAME "/airport_mutex"
 #define LOGFILE "airport_log.txt"
 
-/* ANSI color helpers */
+
 #define ANSI_CLEAR_SCREEN()      printf("\x1b[2J")
 #define ANSI_CURSOR_HOME()       printf("\x1b[H")
 #define ANSI_HIDE_CURSOR()       printf("\x1b[?25l")
@@ -52,19 +34,15 @@
 #define ANSI_CYAN()              printf("\x1b[36m")
 #define ANSI_WHITE()             printf("\x1b[37m")
 
-/* spinner frames */
 const char *SPINNER[] = { "|", "/", "-", "\\" };
 const int SPINNER_FRAMES = 4;
 
-/* monitor state */
 static shm_state_t *st = NULL;
 static int shm_id = -1;
 static sem_t *sem_mutex = NULL;
 
-/* non-blocking keyboard input setup */
 static struct termios orig_term;
 
-/* set terminal to raw-ish mode for single-key reading */
 void enable_raw_mode() {
     tcgetattr(STDIN_FILENO, &orig_term);
     struct termios raw = orig_term;
@@ -74,12 +52,11 @@ void enable_raw_mode() {
     tcsetattr(STDIN_FILENO, TCSANOW, &raw);
 }
 
-/* restore terminal */
+
 void disable_raw_mode() {
     tcsetattr(STDIN_FILENO, TCSANOW, &orig_term);
 }
 
-/* try to open shared memory and semaphore */
 int open_ipc() {
     shm_id = shmget(SHM_KEY, sizeof(shm_state_t), 0666);
     if (shm_id < 0) {
@@ -95,7 +72,6 @@ int open_ipc() {
     return 0;
 }
 
-/* gracefully detach */
 void close_ipc() {
     if (st) {
         shmdt(st);
@@ -107,7 +83,6 @@ void close_ipc() {
     }
 }
 
-/* read last N lines from logfile (non-blocking if not present) */
 int read_log_tail(char **out_lines, int max_lines) {
     for (int i=0;i<max_lines;i++) out_lines[i] = NULL;
     FILE *f = fopen(LOGFILE, "r");
@@ -137,7 +112,7 @@ int read_log_tail(char **out_lines, int max_lines) {
             pos = cur;
         }
     }
-    /* first line */
+  
     if (lines < max_lines) {
         fseek(f, 0, SEEK_SET);
         free(buf);
@@ -159,14 +134,12 @@ int read_log_tail(char **out_lines, int max_lines) {
     return lines;
 }
 
-/* get terminal width */
 int term_width() {
     struct winsize w;
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) == -1) return 80;
     return w.ws_col;
 }
 
-/* small helper to print horizontal box */
 void print_header(const char *title) {
     int w = term_width();
     printf("┌");
@@ -185,7 +158,7 @@ void print_header(const char *title) {
     printf("┤\n");
 }
 
-/* draw progress bar (animated small) */
+
 void draw_occupancy_bar(int width, int frame) {
     int fill = (frame % (width)) + 1;
     printf("[");
@@ -196,7 +169,6 @@ void draw_occupancy_bar(int width, int frame) {
     printf("]");
 }
 
-/* main rendering loop */
 int main() {
     if (open_ipc() != 0) {
         fprintf(stderr, "Failed to open shared memory (is producer/consumer running?).\n");
@@ -211,7 +183,7 @@ int main() {
     char key = 0;
 
     while (1) {
-        /* check for keypress */
+     
         char ch = 0;
         if (read(STDIN_FILENO, &ch, 1) == 1) {
             if (ch == 'q' || ch == 'Q') {
@@ -219,7 +191,7 @@ int main() {
             }
         }
 
-        /* snapshot */
+   
         shm_state_t snapshot;
         int have_snapshot = 0;
         if (st) {
@@ -229,13 +201,12 @@ int main() {
             have_snapshot = 1;
         }
 
-        /* render */
+     
         ANSI_CLEAR_SCREEN();
         ANSI_CURSOR_HOME();
 
         print_header("✈ AIRPORT RUNWAY SCHEDULER - MONITOR");
 
-        /* Weather banner */
         if (have_snapshot && snapshot.severe_weather) {
             ANSI_BOLD(); ANSI_RED();
             printf("!!! SEVERE WEATHER ACTIVE: ONLY EMERGENCY LANDINGS/TKOF ALLOWED !!!\n");
@@ -247,14 +218,13 @@ int main() {
         }
         printf("\n");
 
-        /* Runway status */
         printf("Active Runways:\n");
         for (int r=0;r<RUNWAYS;r++) {
             printf("  RWY-%d: ", r+1);
             if (have_snapshot && snapshot.runway_in_use[r] != 0) {
                 ANSI_YELLOW(); printf("OCCUPIED "); ANSI_RESET();
                 printf("(PID %d) ", snapshot.runway_in_use[r]);
-                /* animated spinner + small occupancy bar */
+              
                 printf("%s ", SPINNER[spinner_frame % SPINNER_FRAMES]);
                 draw_occupancy_bar(20, spinner_frame);
                 printf("\n");
@@ -267,7 +237,7 @@ int main() {
         }
         printf("\n");
 
-        /* Queue */
+     
         printf("Queued Flights (front -> back):\n");
         if (have_snapshot && snapshot.q_count > 0) {
             int cnt = snapshot.q_count;
@@ -291,7 +261,6 @@ int main() {
         }
         printf("\n");
 
-        /* metrics */
         if (have_snapshot) {
             printf("Metrics: total_assigned=%d  total_busy_ms=%ld  queue_len=%d\n",
                    snapshot.total_assigned, snapshot.total_busy_ms, snapshot.q_count);
@@ -300,7 +269,6 @@ int main() {
         }
         printf("\n");
 
-        /* animated ascii sky / runway */
         int w = term_width();
         int mid = w / 2;
         /* sky line */
@@ -311,10 +279,10 @@ int main() {
         }
         ANSI_RESET(); printf("\n\n");
 
-        /* Log tail */
+     
         printf("Recent Log:\n");
         char *lines[16];
-        int read_lines = read_log_tail(lines, 12); /* returns lines read (may be 0) */
+        int read_lines = read_log_tail(lines, 12); 
         if (read_lines > 0) {
             for (int i=0;i<12;i++) {
                 if (lines[i]) {

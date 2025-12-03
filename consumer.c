@@ -44,17 +44,16 @@ void open_ipc() {
     if (sem_runways == SEM_FAILED) die("sem_open runways");
 }
 
-/* remove item at index idx_in_array (absolute index), shifting later items left */
+
 void remove_at_index(int idx_in_array) {
     int idx = idx_in_array;
-    /* shift items: from idx to tail-1 */
     int next = (idx + 1) % MAX_FLIGHTS;
     while (idx != st->q_tail) {
         st->q[idx] = st->q[next];
         idx = next;
         next = (next + 1) % MAX_FLIGHTS;
     }
-    /* clear old tail slot */
+
     int new_tail = (st->q_tail - 1 + MAX_FLIGHTS) % MAX_FLIGHTS;
     st->q[new_tail].used = 0;
     st->q_tail = new_tail;
@@ -66,7 +65,6 @@ int find_eligible_index() {
     if (!st->severe_weather) {
         return st->q_head;
     } else {
-        /* find first emergency landing (scan forward) */
         int idx = st->q_head;
         for (int k=0;k<st->q_count;k++) {
             flight_t *f = &st->q[idx];
